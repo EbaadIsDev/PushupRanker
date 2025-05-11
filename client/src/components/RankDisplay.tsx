@@ -9,7 +9,7 @@ interface RankDisplayProps {
   progress: number;
   totalPushups: number;
   maxSet: number;
-  nextThreshold: number;
+  nextThreshold: number | null;
 }
 
 const RankDisplay = ({ 

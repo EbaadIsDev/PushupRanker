@@ -84,7 +84,7 @@ const Home = () => {
             level: userData.currentRankLevel,
             progress: userData.currentProgress,
             nextThreshold: 0 // Will be calculated by component
-          })}
+          }) || 0}
         />
         
         <PushupForm onSubmit={handlePushupSubmit} />
