@@ -5,6 +5,8 @@ import {
   userSettings, type UserSettings, type InsertUserSettings,
   AnonymousUserData
 } from "@shared/schema";
+import { db } from "./db";
+import { eq, desc } from "drizzle-orm";
 
 // Storage interface with CRUD methods
 export interface IStorage {
@@ -30,57 +32,26 @@ export interface IStorage {
   getAnonymousUserDataTemplate(): AnonymousUserData;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private pushupRecords: Map<number, PushupRecord>;
-  private userStats: Map<number, UserStats>;
-  private userSettings: Map<number, UserSettings>;
-  
-  currentUserId: number;
-  currentPushupRecordId: number;
-  currentUserStatsId: number;
-  currentUserSettingsId: number;
-
-  constructor() {
-    this.users = new Map();
-    this.pushupRecords = new Map();
-    this.userStats = new Map();
-    this.userSettings = new Map();
-    
-    this.currentUserId = 1;
-    this.currentPushupRecordId = 1;
-    this.currentUserStatsId = 1;
-    this.currentUserSettingsId = 1;
-  }
-
+export class DatabaseStorage implements IStorage {
   // User methods
   async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.currentUserId++;
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
+    const [user] = await db.insert(users).values(insertUser).returning();
     return user;
   }
 
   // Pushup record methods
   async createPushupRecord(record: InsertPushupRecord): Promise<PushupRecord> {
-    const id = this.currentPushupRecordId++;
-    const now = new Date();
-    const pushupRecord: PushupRecord = { 
-      ...record, 
-      id,
-      createdAt: now
-    };
-    this.pushupRecords.set(id, pushupRecord);
+    const [pushupRecord] = await db.insert(pushupRecords).values(record).returning();
 
     // Update user stats if userId is provided
     if (record.userId) {
@@ -99,20 +70,26 @@ export class MemStorage implements IStorage {
   }
 
   async getUserPushupRecords(userId: number): Promise<PushupRecord[]> {
-    return Array.from(this.pushupRecords.values())
-      .filter(record => record.userId === userId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return db.select()
+      .from(pushupRecords)
+      .where(eq(pushupRecords.userId, userId))
+      .orderBy(desc(pushupRecords.createdAt));
   }
 
   async getRecentPushupRecords(userId: number, limit: number): Promise<PushupRecord[]> {
-    return (await this.getUserPushupRecords(userId)).slice(0, limit);
+    return db.select()
+      .from(pushupRecords)
+      .where(eq(pushupRecords.userId, userId))
+      .orderBy(desc(pushupRecords.createdAt))
+      .limit(limit);
   }
 
   // User stats methods
   async getUserStats(userId: number): Promise<UserStats | undefined> {
-    return Array.from(this.userStats.values()).find(
-      stats => stats.userId === userId
-    );
+    const [stats] = await db.select()
+      .from(userStats)
+      .where(eq(userStats.userId, userId));
+    return stats;
   }
 
   async updateUserStats(userId: number, statsUpdate: Partial<UserStats>): Promise<UserStats> {
@@ -120,9 +97,7 @@ export class MemStorage implements IStorage {
     
     if (!stats) {
       // Create new stats if they don't exist
-      const id = this.currentUserStatsId++;
-      stats = {
-        id,
+      const newStats = {
         userId,
         totalPushups: 0,
         maxSet: 0,
@@ -131,11 +106,14 @@ export class MemStorage implements IStorage {
         currentProgress: 0,
         ...statsUpdate
       };
-      this.userStats.set(id, stats);
+      const [createdStats] = await db.insert(userStats).values(newStats).returning();
+      stats = createdStats;
     } else {
       // Update existing stats
-      const updatedStats = { ...stats, ...statsUpdate };
-      this.userStats.set(stats.id, updatedStats);
+      const [updatedStats] = await db.update(userStats)
+        .set(statsUpdate)
+        .where(eq(userStats.id, stats.id))
+        .returning();
       stats = updatedStats;
     }
     
@@ -144,9 +122,10 @@ export class MemStorage implements IStorage {
 
   // User settings methods
   async getUserSettings(userId: number): Promise<UserSettings | undefined> {
-    return Array.from(this.userSettings.values()).find(
-      settings => settings.userId === userId
-    );
+    const [settings] = await db.select()
+      .from(userSettings)
+      .where(eq(userSettings.userId, userId));
+    return settings;
   }
 
   async updateUserSettings(userId: number, settingsUpdate: Partial<UserSettings>): Promise<UserSettings> {
@@ -154,9 +133,7 @@ export class MemStorage implements IStorage {
     
     if (!settings) {
       // Create new settings if they don't exist
-      const id = this.currentUserSettingsId++;
-      settings = {
-        id,
+      const newSettings = {
         userId,
         soundEnabled: true,
         notificationsEnabled: true,
@@ -164,11 +141,14 @@ export class MemStorage implements IStorage {
         darkModeEnabled: true,
         ...settingsUpdate
       };
-      this.userSettings.set(id, settings);
+      const [createdSettings] = await db.insert(userSettings).values(newSettings).returning();
+      settings = createdSettings;
     } else {
       // Update existing settings
-      const updatedSettings = { ...settings, ...settingsUpdate };
-      this.userSettings.set(settings.id, updatedSettings);
+      const [updatedSettings] = await db.update(userSettings)
+        .set(settingsUpdate)
+        .where(eq(userSettings.id, settings.id))
+        .returning();
       settings = updatedSettings;
     }
     
@@ -194,4 +174,4 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();

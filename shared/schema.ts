@@ -12,7 +12,7 @@ export const users = pgTable("users", {
 // Pushup records schema to track user pushups
 export const pushupRecords = pgTable("pushup_records", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id"),
+  userId: integer("user_id").references(() => users.id),
   count: integer("count").notNull(),
   difficultyLevel: text("difficulty_level").notNull().default("standard"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -21,7 +21,7 @@ export const pushupRecords = pgTable("pushup_records", {
 // User stats schema to maintain user's pushup statistics
 export const userStats = pgTable("user_stats", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().unique(),
+  userId: integer("user_id").notNull().unique().references(() => users.id),
   totalPushups: integer("total_pushups").notNull().default(0),
   maxSet: integer("max_set").notNull().default(0),
   currentRankTier: text("current_rank_tier").notNull().default("bronze"),
@@ -32,7 +32,7 @@ export const userStats = pgTable("user_stats", {
 // User settings schema to store user preferences
 export const userSettings = pgTable("user_settings", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().unique(),
+  userId: integer("user_id").notNull().unique().references(() => users.id),
   soundEnabled: boolean("sound_enabled").notNull().default(true),
   notificationsEnabled: boolean("notifications_enabled").notNull().default(true),
   animationsEnabled: boolean("animations_enabled").notNull().default(true),
