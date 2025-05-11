@@ -110,7 +110,7 @@ const RankDisplay = ({
         <div className="bg-gray-800 rounded-xl p-4 text-center">
           <p className="text-gray-400 text-sm">NEXT RANK AT</p>
           <p className="text-3xl font-bold text-purple-500">
-            {nextThreshold !== null ? nextThreshold : 'MAX'}
+            {nextThreshold > 0 ? nextThreshold : 'MAX'}
           </p>
         </div>
       </div>

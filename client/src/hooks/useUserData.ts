@@ -104,8 +104,8 @@ export function useUserData() {
   });
 
   // Add pushup record
-  const addPushupRecord = async (submission: PushupSubmission) => {
-    if (!userData) return;
+  const addPushupRecord = async (submission: PushupSubmission): Promise<boolean> => {
+    if (!userData) return false;
     
     try {
       // Save the current rank for comparison

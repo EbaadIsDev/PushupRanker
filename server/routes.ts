@@ -321,7 +321,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Cap at Diamond level 5
       if (level === 5) {
         progress = 100;
-        nextThreshold = null;
+        // Use 0 instead of null for nextThreshold
+        nextThreshold = 0;
       }
     }
     

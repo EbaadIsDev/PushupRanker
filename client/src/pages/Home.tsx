@@ -83,7 +83,7 @@ const Home = () => {
             tier: userData.currentRankTier as any,
             level: userData.currentRankLevel,
             progress: userData.currentProgress,
-            nextThreshold: null // This will be calculated inside the component
+            nextThreshold: 0 // Will be calculated by component
           })}
         />
         
