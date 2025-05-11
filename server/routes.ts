@@ -1,9 +1,33 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { PushupSubmission, pushupSubmissionSchema } from "@shared/schema";
+import { PushupSubmission, pushupSubmissionSchema, insertUserSchema } from "@shared/schema";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
+import * as bcrypt from 'bcryptjs';
+import * as z from 'zod';
+
+// Type for authenticated user in the session
+declare module 'express-session' {
+  interface SessionData {
+    userId: number;
+    authenticated: boolean;
+  }
+}
+
+// User middleware to check authentication
+const isAuthenticated = (req: Request, res: Response, next: NextFunction) => {
+  if (req.session && req.session.authenticated) {
+    return next();
+  }
+  return res.status(401).json({ success: false, message: 'Unauthorized' });
+};
+
+// Login validation schema
+const loginSchema = z.object({
+  username: z.string().min(3),
+  password: z.string().min(6),
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // API routes
@@ -14,14 +38,182 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return res.status(200).json(template);
   });
   
-  // Submit pushup record (without login)
+  // User Registration
+  app.post('/api/register', async (req: Request, res: Response) => {
+    try {
+      const userData = insertUserSchema.parse(req.body);
+      
+      // Check if username already exists
+      const existingUser = await storage.getUserByUsername(userData.username);
+      if (existingUser) {
+        return res.status(409).json({
+          success: false,
+          message: 'Username already exists'
+        });
+      }
+      
+      // Hash password
+      const hashedPassword = await bcrypt.hash(userData.password, 10);
+      
+      // Create user with hashed password
+      const user = await storage.createUser({
+        username: userData.username,
+        password: hashedPassword
+      });
+      
+      // Set up session
+      req.session.userId = user.id;
+      req.session.authenticated = true;
+      
+      return res.status(201).json({
+        success: true,
+        message: 'User registered successfully',
+        userId: user.id
+      });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        return res.status(400).json({
+          success: false,
+          message: validationError.message
+        });
+      }
+      
+      console.error('Error registering user:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+    }
+  });
+  
+  // User Login
+  app.post('/api/login', async (req: Request, res: Response) => {
+    try {
+      const loginData = loginSchema.parse(req.body);
+      
+      // Find user
+      const user = await storage.getUserByUsername(loginData.username);
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid username or password'
+        });
+      }
+      
+      // Verify password
+      const isPasswordValid = await bcrypt.compare(loginData.password, user.password);
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid username or password'
+        });
+      }
+      
+      // Set up session
+      req.session.userId = user.id;
+      req.session.authenticated = true;
+      
+      // Get user stats
+      const stats = await storage.getUserStats(user.id);
+      const settings = await storage.getUserSettings(user.id);
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Login successful',
+        user: {
+          id: user.id,
+          username: user.username,
+          stats,
+          settings
+        }
+      });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        return res.status(400).json({
+          success: false,
+          message: validationError.message
+        });
+      }
+      
+      console.error('Error logging in:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+    }
+  });
+  
+  // User Logout
+  app.post('/api/logout', (req: Request, res: Response) => {
+    req.session.destroy(err => {
+      if (err) {
+        return res.status(500).json({
+          success: false,
+          message: 'Error logging out'
+        });
+      }
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Logged out successfully'
+      });
+    });
+  });
+  
+  // Get User Profile (protected)
+  app.get('/api/profile', isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = req.session.userId!;
+      
+      // Get user data
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+      
+      // Get user stats and settings
+      const stats = await storage.getUserStats(userId);
+      const settings = await storage.getUserSettings(userId);
+      
+      // Get recent records
+      const recentRecords = await storage.getRecentPushupRecords(userId, 10);
+      
+      return res.status(200).json({
+        success: true,
+        user: {
+          id: user.id,
+          username: user.username,
+          stats,
+          settings,
+          recentRecords
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+    }
+  });
+  
+  // Submit pushup record
   app.post("/api/pushups", async (req: Request, res: Response) => {
     try {
       // Validate request body
       const submissionData = pushupSubmissionSchema.parse(req.body);
       
-      // Create a new pushup record without userId (for anonymous users)
+      // Check if user is authenticated
+      const userId = req.session.userId;
+      
+      // Create a new pushup record (with userId if authenticated)
       const record = await storage.createPushupRecord({
+        userId: userId || undefined,
         count: submissionData.count,
         difficultyLevel: submissionData.difficultyLevel,
       });
