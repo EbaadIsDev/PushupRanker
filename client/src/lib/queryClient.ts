@@ -1,5 +1,17 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+// Helper to determine if we're running in production
+const isProduction = import.meta.env.MODE === 'production';
+
+// Helper to adjust API paths for Netlify Functions
+function getApiPath(url: string): string {
+  if (isProduction && url.startsWith('/api/')) {
+    // Convert /api/something to /.netlify/functions/something
+    return url.replace('/api/', '/.netlify/functions/');
+  }
+  return url;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -12,7 +24,10 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const res = await fetch(url, {
+  // Adjust URL for Netlify functions if needed
+  const apiUrl = getApiPath(url);
+  
+  const res = await fetch(apiUrl, {
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
@@ -29,7 +44,11 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey[0] as string, {
+    // Adjust URL for Netlify functions if needed
+    const urlKey = queryKey[0] as string;
+    const apiUrl = getApiPath(urlKey);
+    
+    const res = await fetch(apiUrl, {
       credentials: "include",
     });
 
