@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
 import { AnonymousUserData, anonymousUserDataSchema, PushupSubmission } from '@shared/schema';
-import { apiRequest } from '@/lib/queryClient';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { calculateRank } from '@/lib/rankSystem';
 import { useToast } from '@/hooks/use-toast';
 import soundManager from '@/lib/sounds';
@@ -17,7 +15,6 @@ export function useUserData() {
   const [showRankUpNotification, setShowRankUpNotification] = useState(false);
   const [newRank, setNewRank] = useState({ tier: '', level: 0 });
   
-  const queryClient = useQueryClient();
   const { toast } = useToast();
   const { settings, updateSettings } = useSettings();
 
@@ -36,15 +33,22 @@ export function useUserData() {
           // Sync settings with context
           updateSettings(validatedData.settings);
         } else {
-          // Fetch template from API if no local data
-          const response = await fetch('/api/anonymous-template');
-          
-          if (!response.ok) {
-            throw new Error('Failed to fetch user data template');
-          }
-          
-          const template = await response.json();
-          setUserData(template);
+          // Initialize with default values if no local data
+          const defaultData = {
+            totalPushups: 0,
+            maxSet: 0,
+            currentRankTier: 'bronze',
+            currentRankLevel: 1,
+            currentProgress: 0,
+            history: [],
+            settings: {
+              soundEnabled: true,
+              notificationsEnabled: true,
+              animationsEnabled: true,
+              darkModeEnabled: true
+            }
+          };
+          setUserData(defaultData);
         }
       } catch (error) {
         console.error('Error loading user data:', error);
@@ -85,24 +89,6 @@ export function useUserData() {
     }
   }, [settings]);
 
-  // API mutation for submitting pushups
-  const submitPushupsMutation = useMutation({
-    mutationFn: async (submission: PushupSubmission) => {
-      const response = await apiRequest('POST', '/api/pushups', submission);
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/pushups'] });
-    },
-    onError: (error) => {
-      toast({
-        title: 'Error submitting pushups',
-        description: error.message || 'Please try again later.',
-        variant: 'destructive'
-      });
-    }
-  });
-
   // Add pushup record
   const addPushupRecord = async (submission: PushupSubmission): Promise<boolean> => {
     if (!userData) return false;
@@ -113,10 +99,6 @@ export function useUserData() {
         tier: userData.currentRankTier,
         level: userData.currentRankLevel
       });
-      
-      // Submit pushups to API (this is just for logging purposes,
-      // the actual data is stored in localStorage)
-      submitPushupsMutation.mutate(submission);
       
       // Update local user data
       const newRecord = {
